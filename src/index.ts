@@ -340,6 +340,7 @@ function createRootRun(
   cwd: string,
   threadId: string | undefined,
   turnNumber: number,
+  parent: RunTree | undefined,
 ): RunTree {
   const config = {
     name: "Pi agent run",
@@ -361,11 +362,30 @@ function createRootRun(
     })),
   };
 
-  return new RunTree(config);
+  return parent ? parent.createChild(config) : new RunTree(config);
 }
 
-export default async function (pi: ExtensionAPI, options?: { client?: Client }) {
-  const config = await getConfig();
+export interface LangSmithExtensionOptions {
+  /** LangSmith client to use instead of one built from the resolved config. */
+  client?: Client;
+  /**
+   * Extension config to use instead of discovering one from the environment
+   * and `.pi/langsmith.json` files. Lets a host application that loads the
+   * extension programmatically configure it without touching the process
+   * environment.
+   */
+  config?: Config;
+  /**
+   * When set, each Pi agent run is created as a child of the returned run
+   * instead of starting a new trace. Lets a host application nest Pi runs
+   * under a trace it already manages. Called at the start of each agent run;
+   * returning `undefined` falls back to a new root trace.
+   */
+  getParentRunTree?: () => RunTree | undefined;
+}
+
+export default async function (pi: ExtensionAPI, options?: LangSmithExtensionOptions) {
+  const config = options?.config ?? (await getConfig());
   const enabled = config.enabled;
 
   const client = enabled
@@ -420,6 +440,7 @@ export default async function (pi: ExtensionAPI, options?: { client?: Client }) 
         ctx.cwd,
         threadId,
         nextUserTurn(threadId),
+        options?.getParentRunTree?.(),
       ),
       turns: new Map(),
       deferNextLlmToNextTurn: false,
