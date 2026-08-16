@@ -34,6 +34,7 @@ const getPostedRuns = async (
         name: string;
         trace_id: string;
         parent_run_id?: string;
+        session_name?: string;
       };
     })
     .filter((run) => run !== undefined);
@@ -51,6 +52,8 @@ it("enables tracing from an options-provided config", async () => {
   const root = runs.find((run) => run.name === "Pi agent run");
   expect(root).toBeDefined();
   expect(root!.parent_run_id).toBeUndefined();
+  // Config defaults still apply to an options-provided config.
+  expect(root!.session_name).toBe("pi-coding-agent");
 });
 
 it("nests agent runs under a host-provided parent run tree", async () => {

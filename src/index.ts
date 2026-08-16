@@ -1,9 +1,11 @@
 import type { ContextEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Client, RunTree } from "langsmith";
 
-import { type Config, getConfig } from "./config.js";
+import { type Config, ConfigSchema, DEFAULT_PROJECT, getConfig } from "./config.js";
 import { codingAgentMetadata } from "./metadata.js";
 import { isRecord } from "./types.js";
+
+export type { Config } from "./config.js";
 
 const STATUS_KEY = "langsmith";
 
@@ -380,12 +382,18 @@ export interface LangSmithExtensionOptions {
    * instead of starting a new trace. Lets a host application nest Pi runs
    * under a trace it already manages. Called at the start of each agent run;
    * returning `undefined` falls back to a new root trace.
+   *
+   * The returned run's client and project are inherited by the Pi run, so
+   * `config.project`, `config.api_key`, `config.api_url` and `client` no longer
+   * affect where these traces land. `config.replicas` still applies.
    */
   getParentRunTree?: () => RunTree | undefined;
 }
 
 export default async function (pi: ExtensionAPI, options?: LangSmithExtensionOptions) {
-  const config = options?.config ?? (await getConfig());
+  const config = options?.config
+    ? ConfigSchema.parse({ project: DEFAULT_PROJECT, ...options.config })
+    : await getConfig();
   const enabled = config.enabled;
 
   const client = enabled

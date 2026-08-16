@@ -109,6 +109,26 @@ Use `replicas` to send runs to additional LangSmith destinations:
 }
 ```
 
+## Programmatic Usage
+
+A host application can load the extension directly instead of going through the Pi CLI. The default export takes an optional second argument:
+
+```ts
+langsmithExtension(pi, {
+  // Use this config instead of discovering one from env vars and
+  // .pi/langsmith.json files. Defaults still apply.
+  config: { enabled: true, api_key: "...", project: "my-app-agents" },
+
+  // Called at the start of each agent run. Return a RunTree to nest the
+  // Pi run under it; return undefined for a new root trace.
+  getParentRunTree: () => hostRun,
+});
+```
+
+Both options are optional; omitting them leaves CLI behavior unchanged.
+
+When `getParentRunTree` returns a run, the Pi run inherits that run's LangSmith client and project — `config.project` / `api_key` / `api_url` no longer affect where traces land (`replicas` still applies). The host owns the parent's lifecycle: post it before the agent starts, and end it yourself.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, testing, and pull request guidance.
