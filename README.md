@@ -111,23 +111,63 @@ Use `replicas` to send runs to additional LangSmith destinations:
 
 ## Programmatic Usage
 
-A host application can load the extension directly instead of going through the Pi CLI. The default export takes an optional second argument:
+A host application can load the extension directly instead of going through the Pi CLI. You can customise how the extension is loaded by providing the instance directly through `extensionFactories` in `DefaultResourceLoader`.
 
 ```ts
-langsmithExtension(pi, {
-  // Use this config instead of discovering one from env vars and
-  // .pi/langsmith.json files. Defaults still apply.
-  config: { enabled: true, api_key: "...", project: "my-app-agents" },
+import { RunTree } from "langsmith";
+import langsmith from "@langchain/langsmith-pi-extension";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  getAgentDir,
+  SessionManager,
+} from "@earendil-works/pi-coding-agent";
 
-  // Called at the start of each agent run. Return a RunTree to nest the
-  // Pi run under it; return undefined for a new root trace.
-  getParentRunTree: () => hostRun,
+const resourceLoader = new DefaultResourceLoader({
+  cwd: process.cwd(),
+  agentDir: getAgentDir(),
+  extensionFactories: [
+    (pi) =>
+      langsmith(pi, {
+        // Use this config instead of discovering one from env vars and
+        // .pi/langsmith.json files. Defaults still apply.
+        config: {
+          enabled: true,
+          api_key: "...",
+          project: "my-app-agents",
+        },
+        // By default, the extension will use the current traceable run as the parent for agent runs.
+        // You can override this behavior by providing a `getCurrentRunTree` function:
+        getCurrentRunTree() {
+          return new RunTree({ name: "parent run", run_type: "chain" });
+        },
+      }),
+  ],
 });
+
+await resourceLoader.reload();
+
+const { session } = await createAgentSession({
+  resourceLoader,
+  sessionManager: SessionManager.inMemory(),
+});
+
+try {
+  session.subscribe((event) => {
+    if (
+      event.type === "message_update" &&
+      event.assistantMessageEvent.type === "text_delta"
+    ) {
+      process.stdout.write(event.assistantMessageEvent.delta);
+    }
+  });
+
+  await session.prompt("List files in the current directory.");
+  console.log();
+} finally {
+  session.dispose();
+}
 ```
-
-Both options are optional; omitting them leaves CLI behavior unchanged.
-
-When `getParentRunTree` returns a run, the Pi run inherits that run's LangSmith client and project — `config.project` / `api_key` / `api_url` no longer affect where traces land (`replicas` still applies). The host owns the parent's lifecycle: post it before the agent starts, and end it yourself.
 
 ## Contributing
 

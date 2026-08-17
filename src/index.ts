@@ -1,6 +1,6 @@
 import type { ContextEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Client, RunTree } from "langsmith";
-
+import { getCurrentRunTree } from "langsmith/singletons/traceable";
 import { type Config, ConfigSchema, DEFAULT_PROJECT, getConfig } from "./config.js";
 import { codingAgentMetadata } from "./metadata.js";
 import { isRecord } from "./types.js";
@@ -364,7 +364,7 @@ function createRootRun(
     })),
   };
 
-  return parent ? parent.createChild(config) : new RunTree(config);
+  return parent?.createChild(config) ?? new RunTree(config);
 }
 
 export interface LangSmithExtensionOptions {
@@ -387,13 +387,17 @@ export interface LangSmithExtensionOptions {
    * `config.project`, `config.api_key`, `config.api_url` and `client` no longer
    * affect where these traces land. `config.replicas` still applies.
    */
-  getParentRunTree?: () => RunTree | undefined;
+  getCurrentRunTree?: () => RunTree | undefined;
 }
 
 export default async function (pi: ExtensionAPI, options?: LangSmithExtensionOptions) {
-  const config = options?.config
-    ? ConfigSchema.parse({ project: DEFAULT_PROJECT, ...options.config })
-    : await getConfig();
+  const config =
+    options?.config != null
+      ? ConfigSchema.parse({
+          ...options.config,
+          project: options.config.project || DEFAULT_PROJECT,
+        })
+      : await getConfig();
   const enabled = config.enabled;
 
   const client = enabled
@@ -439,6 +443,13 @@ export default async function (pi: ExtensionAPI, options?: LangSmithExtensionOpt
     }
 
     const threadId = ctx.sessionManager?.getSessionId?.();
+    let parent = undefined;
+    if (typeof options?.getCurrentRunTree === "function") {
+      parent = options.getCurrentRunTree();
+    } else {
+      parent = getCurrentRunTree(true);
+    }
+
     active = {
       root: createRootRun(
         client,
@@ -448,7 +459,7 @@ export default async function (pi: ExtensionAPI, options?: LangSmithExtensionOpt
         ctx.cwd,
         threadId,
         nextUserTurn(threadId),
-        options?.getParentRunTree?.(),
+        parent,
       ),
       turns: new Map(),
       deferNextLlmToNextTurn: false,

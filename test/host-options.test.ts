@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import * as fs from "node:fs";
 import { RunTree } from "langsmith";
+import { traceable, withRunTree } from "langsmith/traceable";
 import extension from "../src/index";
 import { replayExtension } from "./utils/replay";
 import { mockClient } from "./utils/mock_client";
@@ -60,19 +61,39 @@ it("nests agent runs under a host-provided parent run tree", async () => {
   const { client, callSpy } = mockClient();
   const parent = new RunTree({ name: "host run", run_type: "chain", client });
 
-  await replayExtension(
-    (pi) =>
-      extension(pi, {
-        client,
-        config: { enabled: true },
-        getParentRunTree: () => parent,
-      }),
-    await recording(),
-  );
+  await withRunTree(parent, async () => {
+    await replayExtension(
+      (pi) => extension(pi, { client, config: { enabled: true } }),
+      await recording(),
+    );
+  });
 
   const runs = await getPostedRuns(client, callSpy);
   const root = runs.find((run) => run.name === "Pi agent run");
   expect(root).toBeDefined();
   expect(root!.parent_run_id).toBe(parent.id);
   expect(root!.trace_id).toBe(parent.trace_id);
+});
+
+it("nests agent runs under the current traceable run", async () => {
+  const { client, callSpy } = mockClient();
+
+  const host = traceable(
+    async () => {
+      await replayExtension(
+        (pi) => extension(pi, { client, config: { enabled: true } }),
+        await recording(),
+      );
+    },
+    { name: "host run", run_type: "chain", client, tracingEnabled: true },
+  );
+  await host();
+
+  const runs = await getPostedRuns(client, callSpy);
+  const parent = runs.find((run) => run.name === "host run");
+  const root = runs.find((run) => run.name === "Pi agent run");
+  expect(parent).toBeDefined();
+  expect(root).toBeDefined();
+  expect(root!.parent_run_id).toBe(parent!.id);
+  expect(root!.trace_id).toBe(parent!.trace_id);
 });
